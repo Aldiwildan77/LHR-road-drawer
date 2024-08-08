@@ -1,40 +1,83 @@
 const canvas = document.getElementById('drawingCanvas');
 const ctx = canvas.getContext('2d');
+
 let isDrawing = false;
-let lastX = 0;
-let lastY = 0;
+let startX = 0;
+let startY = 0;
+let lastX = null;
+let lastY = null;
 let lines = [];
-let undoStack = [];
-let redoStack = [];
 
 const gridSize = 50;
 const drawingColor = '#FF0000';
+const distanceThreshold = 100; // Distance threshold to complete the shape
 
 canvas.addEventListener('mousedown', (e) => {
   if (!isDrawingAllowed()) return;
   isDrawing = true;
-  [lastX, lastY] = [e.offsetX, e.offsetY];
-  lines.push({ x: lastX, y: lastY });
-  undoStack.push({ action: 'add', line: { x1: lastX, y1: lastY, x2: null, y2: null } });
+  startX = e.offsetX;
+  startY = e.offsetY;
+
+  if (lastX === null || lastY === null) {
+    lastX = startX;
+    lastY = startY;
+  }
+
   console.log('mousedown');
 });
 
 canvas.addEventListener('mousemove', (e) => {
   if (!isDrawing || !isDrawingAllowed()) return;
+  const currentX = e.offsetX;
+  const currentY = e.offsetY;
+
+  // Clear the canvas and redraw the grid and all existing lines
+  clearCanvas();
+
+  // Draw the current line preview
   ctx.strokeStyle = drawingColor;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 2;
+
   ctx.beginPath();
   ctx.moveTo(lastX, lastY);
-  ctx.lineTo(e.offsetX, e.offsetY);
+  ctx.lineTo(currentX, currentY);
   ctx.stroke();
-  [lastX, lastY] = [e.offsetX, e.offsetY];
 });
 
 canvas.addEventListener('mouseup', (e) => {
   if (!isDrawingAllowed()) return;
   isDrawing = false;
-  const [firstX, firstY] = [e.offsetX, e.offsetY];
-  lines.push({ x: firstX, y: firstY });
+  const endX = e.offsetX;
+  const endY = e.offsetY;
+
+  // Save the line
+  lines.push({ x1: lastX, y1: lastY, x2: endX, y2: endY });
+
+  lastX = endX;
+  lastY = endY;
+
+  // Check if the new endpoint is near the start of the first line to complete the shape
+  if (lines.length > 1) {
+    const firstLine = lines[0];
+    const distanceToFirstLineStart = Math.hypot(lastX - firstLine.x1, lastY - firstLine.y1);
+
+    if (distanceToFirstLineStart <= distanceThreshold) {
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(firstLine.x1, firstLine.y1);
+      ctx.stroke();
+      firstLine.x2 = firstLine.x1;
+      firstLine.y2 = firstLine.y1;
+      isDrawing = false; // Stop drawing as the shape is closed
+      lines.push({ x1: lastX, y1: lastY, x2: firstLine.x1, y2: firstLine.y1 });
+      lastX = null;
+      lastY = null;
+      logLines();
+      lines = []; // Clear the lines array
+      return;
+    }
+  }
+
   console.log('mouseup');
   logLines();
 });
@@ -47,34 +90,25 @@ canvas.addEventListener('mouseout', () => {
 
 function logLines() {
   console.log('Points stored:');
-  lines.forEach((point, index) => {
-    console.log(`Point ${index + 1}: (${point.x}, ${point.y})`);
+  lines.forEach((line, index) => {
+    console.log(`Line ${index + 1}: Start(${line.x1}, ${line.y1}) - End(${line.x2}, ${line.y2})`);
   });
-
-  console.log('Lines formed:');
-  for (let i = 0; i < lines.length - 1; i++) {
-    if ((i + 1) % 2 === 1) {
-      const lineOutput = i + 1;
-      console.log(`Line ${lineOutput}: Start(${lines[i].x}, ${lines[i].y}) - End(${lines[i + 1].x}, ${lines[i + 1].y})`);
-    }
-  }
 }
 
-const isDrawingAllowed = () => lines.length < 4;
+const isDrawingAllowed = () => true;
 
 function clearCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  lines = [];
-  loadImage();
+  drawGrid();
+  redrawLines();
 }
 
-function loadImage() {
-  const img = new Image();
-  img.src = 'assets/images/example.jpg';
-  img.onload = () => {
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    drawGrid(); // Draw the grid on top of the image
-  };
+function resetCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGrid();
+  lines = [];
+  lastX = null;
+  lastY = null;
 }
 
 function drawGrid() {
@@ -111,5 +145,13 @@ function markCoordinates(x, y) {
   ctx.fillStyle = '#000000'; // Reset text color to black
 }
 
-// Initial setup
-loadImage();
+function redrawLines() {
+  ctx.strokeStyle = drawingColor;
+  ctx.lineWidth = 2;
+  lines.forEach(line => {
+    ctx.beginPath();
+    ctx.moveTo(line.x1, line.y1);
+    ctx.lineTo(line.x2, line.y2);
+    ctx.stroke();
+  });
+}
